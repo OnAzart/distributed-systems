@@ -1,0 +1,29 @@
+version: "3"
+services:
+  master:
+    build: ./master_ds
+    ports:
+      - "8082:80"
+    networks:
+      uku:
+        ipv4_address: 172.30.0.2
+  secondary_1:
+    build: ./secondary
+    ports:
+      - "8083:80"
+    networks:
+      uku:
+        ipv4_address: 172.30.0.3
+  secondary_2:
+    build: ./secondary
+    ports:
+      - "8084:80"
+    networks:
+      uku:
+        ipv4_address: 172.30.0.4
+networks:
+  uku:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.30.0.0/16"

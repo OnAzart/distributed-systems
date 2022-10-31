@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Master</title>
+</head>
+<body>
+    <h1>HTTP Demo</h1>
+    <form action="{{ url_for('handle_forms') }}" method="POST">
+        <input name="messageToAppend" type="text" placeholder="Enter message to append:"/>
+        <input type="submit" name="action" value="Append"/>
+        <p>{{ append_info | default("") }}</p>
+    </form>
+
+    <form method="GET">
+        <input type="submit" name="action" value="List"/>
+    </form>
+    <div>
+        {% if list_messages %}
+        <div><p>Messages:</p>
+            <ul>
+                {% for message in list_messages %}
+                    <li>{{ message }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+<!--    <p>{{ list_info | default("") }}</p>-->
+
+</body>
+</html>
