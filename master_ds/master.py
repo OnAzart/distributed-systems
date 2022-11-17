@@ -7,7 +7,8 @@ from flask import Flask, request, render_template
 import requests
 
 app = Flask(__name__, template_folder='src')
-logging.basicConfig(filename='master.log', filemode='w', level=logging.INFO,
+logs_filename = 'master.log'
+logging.basicConfig(filename=logs_filename, filemode='w', level=logging.INFO,
                     format='%(asctime)s :: %(levelname)-8s :: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
@@ -28,37 +29,56 @@ def handle_forms():
         return render_template('main.html', list_messages=queue)
 
 
+@app.route('/logs', methods=["GET"])
+def logs_out():
+    with open(logs_filename, 'r') as log_file:
+        logs_lines = log_file.readlines()
+        # return f"<h1> </h2> <br>  <p>{content_of_file}</p>"
+        return render_template('logs.html', logs_lines=logs_lines)
+
+
+def retry_handle(responses):
+    pass
+
+
 def send_to_nodes(message_to_send):
     encoded_message_to_send = json.dumps(message_to_send)
 
-    def sending_to_node(node, responses_dict):
+    def sending_to_node(barrier, node, responses_dict):
         logging.info(f"Sending message to {node} secondary node.")
         try:
+            # We can use docker compose --scale to scale secondary and use their dns name to communicate
             resp = requests.post(f'http://{node}/get_info', data=encoded_message_to_send)
+            logging.info(f"Node ({node}) respond with {resp.status_code} status code.")
+            responses_dict[node] = resp.status_code
+            barrier.wait()
         except ConnectionError or TimeoutError:
             logging.warning(f"Connection error for {node} node.")
             return 1
-        logging.info(f"Node ({node}) respond with {resp.status_code} status code.")
-        responses_dict[node] = resp.status_code
+        except threading.BrokenBarrierError:
+            pass
 
     nodes_ip = ['172.30.0.3', '172.30.0.4']
     threads = []
     responses = {}
+    barrier = threading.Barrier(parties=len(list(nodes_ip)) + 1, timeout=6)
     for node_ip in nodes_ip:
-        thr = threading.Thread(target=sending_to_node, args=(node_ip, responses))
+        thr = threading.Thread(target=sending_to_node, args=(barrier, node_ip, responses))
         thr.start()
-        threads.append(thr)
-    for thr in threads:
-        thr.join(timeout=7)
-        print(f"{thr.name} joined")
-
+        # threads.append(thr)
+    try:
+        barrier.wait()
+    except threading.BrokenBarrierError:
+        print('<<<<<< error >>>>>>>')
+        retry_handle(responses)
+        
     print("Responses: ", responses)
     if not responses:
         # TODO: Retry for all nodes
         return_message = f"Message '{message_to_send}' is NOT replicated at all."
         logging.warning(return_message)
         return return_message
-    elif not list(filter(lambda x: x != 200, responses.values())):
+    elif not list(filter(lambda x: x != 200, responses.values())) and len(responses.values()) == len(nodes_ip):
         return_message = f"Message '{message_to_send}' is replicated to all nodes."
         logging.info(return_message)
         return return_message
