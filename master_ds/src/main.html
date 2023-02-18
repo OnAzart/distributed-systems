@@ -8,7 +8,7 @@
     <h1>HTTP Demo</h1>
     <form action="{{ url_for('handle_forms') }}" method="POST">
         <input name="messageToAppend" type="text" placeholder="Enter message to append"/>
-        <input name="writeConcern" type="number" min="1" max="3" placeholder="Write concern (optional)">
+        <input name="writeConcern" type="number" min="1" max="{{ max_wc }}" placeholder="Write concern (optional)">
         <input type="submit" name="action" value="Append"/>
         <p>{{ append_info | default("") }}</p>
     </form>
@@ -21,7 +21,7 @@
         <div><p>Messages:</p>
             <ul>
                 {% for message in list_messages %}
-                    <li>{{ message }}</li>
+                    <li>{{ message[1] }}</li>
                 {% endfor %}
             </ul>
         </div>

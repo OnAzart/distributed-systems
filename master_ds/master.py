@@ -1,36 +1,23 @@
-from flask import Flask, request, render_template
+import threading
 
-from comunicator import send_to_nodes, logging, logs_filename
-
-app = Flask(__name__, template_folder='src')
-
-queue = []
+from comunicator import get_available_nodes, context, health_check_of_unhealthy_nodes
+from webserver import app
 
 
-@app.route('/', methods=["GET", "POST"])
-def handle_forms():
-    if request.method == 'POST':
-        message_to_append = (request.form['messageToAppend'])
-        write_concern = int(request.form['writeConcern']) if request.form['writeConcern'].isdigit() else None
-
-        queue.append(message_to_append)
-        logging.info(f'"{message_to_append}"({write_concern}) is saved on master.')
-
-        response_text = send_to_nodes(message_to_append, write_concern)
-        return render_template('main.html', append_info=response_text)
-    elif request.method == 'GET' and request.args.get('action', None) == 'List':
-        return render_template('main.html', list_messages=queue)
-    else:
-        return render_template('main.html', list_messages=queue)
+def form_cluster_info():
+    return {ip: 'Healthy' for ip in get_available_nodes('172.30.0')}
 
 
-@app.route('/logs', methods=["GET"])
-def logs_out():
-    with open(logs_filename, 'r') as log_file:
-        logs_lines = log_file.readlines()
-        # return f"<h1> </h2> <br>  <p>{content_of_file}</p>"
-        return render_template('logs.html', logs_lines=logs_lines)
+def main():
+    context.nodes_health_status = form_cluster_info()
+    print(context.nodes_health_status)
+
+    health_check_thread = threading.Thread(target=health_check_of_unhealthy_nodes)
+    health_check_thread.daemon = True
+    health_check_thread.start()
+
+    app.run(host='0.0.0.0', debug=True, port=80)
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True, port=80)
+    main()
