@@ -1,9 +1,8 @@
-import json
+from json import dumps
 import logging
 import sys
 import threading
 import subprocess
-import time
 
 import backoff
 import requests
@@ -37,37 +36,45 @@ def health_check(ip):
 
 def restore_queue_for_alive_node(node_ip):
     try:
-        _post_message_to_node(node_ip, json.dumps(context.queue), purpose='restore')
+        _post_message_to_node(node_ip, dumps(context.queue), purpose='restore')
     except requests.ConnectTimeout:
         logging.warning(f"[Restore Retry Failed] Node {node_ip} is not available again!")
 
 
-def health_check_of_unhealthy_nodes():
-    while True:
-        unhealthy_nodes_ip_list = context.get_nodes_by_status('Unhealthy')
-        print(datetime.now())
-        if unhealthy_nodes_ip_list:
-            logging.warning(f"[Heartbeat] Unhealthy nodes: {unhealthy_nodes_ip_list}")
+def health_check_of_all_nodes():
+    nodes_ip_list = context.nodes_health_status.keys()
+    print(datetime.now())
+
+    for node_ip in nodes_ip_list:
+        health_result = health_check(node_ip)
+        if health_result == 0 and context.nodes_health_status[node_ip] != 'Healthy':
+            # additional check
+            context.set_node_status(node_ip, 'Suspended')
+            logging.info(f"[Heartbeat success] {node_ip} connection is restoring (Suspended).")
+
+            threading.Event().wait(2)
+            additional_health_result = health_check(node_ip)
+            if additional_health_result != 0:
+                continue
+
+            context.set_node_status(node_ip, 'Healthy')
+            logging.info(f"[Heartbeat success] {node_ip} connection is restored.")
+            restore_queue_for_alive_node(node_ip)
+        elif health_result == 1 and context.nodes_health_status[node_ip] == 'Healthy':
+            context.set_node_status(node_ip, status='Suspended')
+            logging.warning(f"[Heartbeat warn] {node_ip} is suspended!")
+        elif health_result == 1 and context.nodes_health_status[node_ip] == 'Suspended':
+            context.set_node_status(node_ip, status='Unhealthy')
+            logging.warning(f"[Heartbeat warn] {node_ip} is Unhealthy!")
+        elif health_result == 1:
+            logging.warning(f"[Heartbeat warn] {node_ip} is still out!")
         else:
             logging.info("[Heartbeat] - all good")
 
-        for unhealthy_node_ip in unhealthy_nodes_ip_list:
-            health_result = health_check(unhealthy_node_ip)
-            if health_result == 0:
-                # additional check
-                context.set_node_status(unhealthy_node_ip, 'Suspended')
-                logging.info(f"[Heartbeat success] {unhealthy_node_ip} connection is restoring (Suspended).")
 
-                threading.Event().wait(4)
-                additional_health_result = health_check(unhealthy_node_ip)
-                if additional_health_result != 0:
-                    continue
-
-                context.set_node_status(unhealthy_node_ip, 'Healthy')
-                logging.info(f"[Heartbeat success] {unhealthy_node_ip} connection is restored.")
-                restore_queue_for_alive_node(unhealthy_node_ip)
-            else:
-                logging.warning(f"[Heartbeat warn] {unhealthy_node_ip} is still out!")
+def eternal_heartbeat():
+    while True:
+        health_check_of_all_nodes()
         threading.Event().wait(60)
 
 
@@ -104,7 +111,7 @@ def sending_to_node(node, message, barrier, responses_dict):
 
     try:
         # We can use docker compose --scale to scale secondary and use their dns name to communicate
-        responses_dict[node] = _post_message_to_node(node, json.dumps(message))
+        responses_dict[node] = _post_message_to_node(node, dumps(message))
         logging.info(f"Node ({node}) respond with {responses_dict[node]} status code.")
         barrier.wait()
     except requests.ConnectTimeout:

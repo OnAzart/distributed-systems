@@ -1,5 +1,5 @@
 from flask import Flask, request, render_template
-from comunicator import send_to_nodes, logging, logs_filename, context
+from comunicator import send_to_nodes, logging, logs_filename, context, health_check_of_all_nodes
 
 
 app = Flask(__name__, template_folder='src')
@@ -36,7 +36,9 @@ def logs_out():
 
 @app.route('/health', methods=["GET"])
 def health():
+    health_check_of_all_nodes()
     node_status_dict = context.nodes_health_status
+
     message = 'Nodes status:<br>'
     for ip, status in node_status_dict.items():
         message += f'{ip} –– {status}<br>'

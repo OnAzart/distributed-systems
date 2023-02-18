@@ -1,6 +1,6 @@
-import threading
+from threading import Thread
 
-from comunicator import get_available_nodes, context, health_check_of_unhealthy_nodes
+from comunicator import get_available_nodes, context, eternal_heartbeat
 from webserver import app
 
 
@@ -12,7 +12,7 @@ def main():
     context.nodes_health_status = form_cluster_info()
     print(context.nodes_health_status)
 
-    health_check_thread = threading.Thread(target=health_check_of_unhealthy_nodes)
+    health_check_thread = Thread(target=eternal_heartbeat)
     health_check_thread.daemon = True
     health_check_thread.start()
 
