@@ -20,11 +20,14 @@ class MessageQueueContext:
     master_counter = 0
     queue = []
 
-    def get_nodes_by_status(self, expected_status):
-        return {ip: status for ip, status in self.nodes_health_status.items() if status == expected_status}
+    def get_nodes_by_status(self, expected_status=("Healthy", "Unhealthy", "Suspended")):
+        return {ip: status for ip, status in self.nodes_health_status.items() if status in expected_status}
 
     def set_node_status(self, ip, status):
         self.nodes_health_status[ip] = status
+
+    def form_cluster_info(self):
+        self.nodes_health_status = {ip: 'Healthy' for ip in get_available_nodes('172.30.0')}
 
 
 context = MessageQueueContext()
@@ -36,14 +39,13 @@ def health_check(ip):
 
 def restore_queue_for_alive_node(node_ip):
     try:
-        _post_message_to_node(node_ip, dumps(context.queue), purpose='restore')
+        post_message_to_node(node_ip, dumps(context.queue), purpose='restore')
     except requests.ConnectTimeout:
         logging.warning(f"[Restore Retry Failed] Node {node_ip} is not available again!")
 
 
 def health_check_of_all_nodes():
     nodes_ip_list = context.nodes_health_status.keys()
-    print(datetime.now())
 
     for node_ip in nodes_ip_list:
         health_result = health_check(node_ip)
@@ -95,7 +97,7 @@ def get_available_nodes(ip_range):
                       if details['tries'] == 1 else 0,
                       on_giveup=lambda details: context.set_node_status(ip=details['args'][0], status='Unhealthy'),
                       on_success=lambda details: context.set_node_status(ip=details['args'][0], status='Healthy'))
-def _post_message_to_node(node, encoded_message_to_send, purpose='append'):
+def post_message_to_node(node, encoded_message_to_send, purpose='append'):
     resp = requests.post(f'http://{node}/get_info',
                          data=encoded_message_to_send,
                          timeout=2,
@@ -104,14 +106,11 @@ def _post_message_to_node(node, encoded_message_to_send, purpose='append'):
 
 
 def sending_to_node(node, message, barrier, responses_dict):
-    # for test
-    print(node, datetime.now())
-    #####
     logging.info(f"Sending message to {node} secondary node.")
 
     try:
         # We can use docker compose --scale to scale secondary and use their dns name to communicate
-        responses_dict[node] = _post_message_to_node(node, dumps(message))
+        responses_dict[node] = post_message_to_node(node, dumps(message))
         logging.info(f"Node ({node}) respond with {responses_dict[node]} status code.")
         barrier.wait()
     except requests.ConnectTimeout:
@@ -148,7 +147,6 @@ def send_to_nodes(message_to_send, write_concern):
     nodes_ip = context.get_nodes_by_status('Healthy').keys()
     if not write_concern or write_concern > len(nodes_ip) + 1:
         write_concern = len(nodes_ip) + 1
-    print(f'{write_concern=}')
 
     responses_from_nodes = {}
     # timeout_for_sending = 15
@@ -160,7 +158,7 @@ def send_to_nodes(message_to_send, write_concern):
         barrier.wait()
     except threading.BrokenBarrierError:
         logging.warning('<<<<<< error. BarrierError happened >>>>>>>')
-    print("Responses: ", responses_from_nodes)
+    logging.info("Responses: ", responses_from_nodes)
     return_message = handle_responses_for_client(responses_from_nodes, nodes_ip, write_concern, message_to_send)
     logging.warning(return_message)
     return return_message
